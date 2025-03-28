@@ -12,8 +12,13 @@ import os
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app, supports_credentials=True, resources={
-    r"/api/*": {
-        "origins": "foodwebsite-git-main-aha-03s-projects.vercel.app",
+    r"/*": {
+        "origins": [
+            "http://localhost:5000",
+            "foodwebsite-git-main-aha-03s-projects.vercel.app"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
     }
 })
