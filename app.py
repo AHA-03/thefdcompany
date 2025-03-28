@@ -13,7 +13,7 @@ import os
 app = Flask(__name__)
 CORS(app, supports_credentials=True, resources={
     r"/api/*": {
-        "origins": "foodwebsite-gilt.vercel.app",
+        "origins": "foodwebsite-git-main-aha-03s-projects.vercel.app",
         "supports_credentials": True
     }
 })
