@@ -23,7 +23,7 @@ CORS(app, supports_credentials=True, resources={
     }
 })
 app.secret_key = os.urandom(24)
-app.config['SESSION_COOKIE_SECURE'] = False  # True in production
+app.config['SESSION_COOKIE_SECURE'] = True   # True in production
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
