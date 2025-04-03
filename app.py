@@ -127,7 +127,53 @@ def logout():
 def index():
     if not validate_session():
         return redirect(url_for('login_page'))
-    return render_template('index.html', username=session['username'])
+    
+    # Get user's bookings (old orders)
+    try:
+        username = session['username']
+        bookings_ref = db.collection('users').document(username).collection('bookings')
+        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        
+        # Get user's orders (new orders)
+        orders_ref = db.collection('orders').where('username', '==', username)
+        orders = [doc.to_dict() for doc in orders_ref.stream()]
+        
+        # Combine both (bookings come first as they're older)
+        all_orders = bookings + orders
+        
+        return render_template('index.html', 
+                             username=username,
+                             orders=all_orders[-5:])  # Show last 5 orders
+    except Exception as e:
+        logger.error(f"Error loading index: {str(e)}")
+        flash('Error loading dashboard', 'danger')
+        return redirect(url_for('login_page'))
+
+@app.route("/order_history")
+def order_history():
+    if not validate_session():
+        return redirect(url_for('login_page'))
+    
+    try:
+        username = session['username']
+        # Get bookings (old orders)
+        bookings_ref = db.collection('users').document(username).collection('bookings')
+        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        
+        # Get orders (new orders)
+        orders_ref = db.collection('orders').where('username', '==', username)
+        orders = [doc.to_dict() for doc in orders_ref.stream()]
+        
+        # Combine both (bookings come first as they're older)
+        all_orders = bookings + orders
+        
+        return render_template('order_history.html',
+                             username=username,
+                             orders=all_orders)
+    except Exception as e:
+        logger.error(f"Error fetching order history: {str(e)}")
+        flash('Error fetching order history', 'danger')
+        return redirect(url_for('index'))
 
 @app.route("/api/orders", methods=["POST"])
 def create_order():
@@ -151,8 +197,11 @@ def create_order():
         # Calculate total
         total = sum(item['price'] * item['quantity'] for item in data['food_items'])
         
-        # Create order document
+        # Create order document in both collections for compatibility
+        username = session['username']
         order_ref = db.collection('orders').document()
+        booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
+        
         order_data = {
             "booking_id": order_ref.id[:8],
             "food_items": data['food_items'],
@@ -160,13 +209,14 @@ def create_order():
             "roll_number": data['roll_number'],
             "status": "pending",
             "created_at": datetime.now(),
-            "username": session['username'],
+            "username": username,
             "total": round(total, 2)
         }
         
-        # Save to database
+        # Save to both collections
         order_ref.set(order_data)
-        logger.info(f"Order created: {order_data['booking_id']}")
+        booking_ref.set(order_data)
+        logger.info(f"Order created in both collections: {order_data['booking_id']}")
         
         # Generate QR code
         qr = qrcode.make(order_data['booking_id'])
@@ -183,26 +233,6 @@ def create_order():
 
     except Exception as e:
         logger.error(f"Order creation failed: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
-
-@app.route("/api/orders/<order_id>", methods=["GET"])
-def get_order(order_id):
-    if not validate_session():
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    try:
-        order_ref = db.collection('orders').document(order_id).get()
-        if not order_ref.exists:
-            return jsonify({"error": "Order not found"}), 404
-        
-        order_data = order_ref.to_dict()
-        if order_data['username'] != session['username']:
-            return jsonify({"error": "Unauthorized"}), 403
-        
-        return jsonify({"status": "success", "order": order_data})
-    
-    except Exception as e:
-        logger.error(f"Error fetching order: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
