@@ -8,6 +8,7 @@ from flask_cors import CORS
 import hashlib
 from datetime import datetime
 import os
+import json
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -15,24 +16,51 @@ CORS(app, supports_credentials=True, resources={
     r"/*": {
         "origins": [
             "http://localhost:5000",
-            "foodwebsite-git-main-aha-03s-projects.vercel.app"
+            "https://39c4-2402-3a80-1824-1e9d-d23-3267-5717-624.ngrok-free.app",
+            "https://thefdcomapany.onrender.com"  # Add your Render URL here
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
     }
 })
-app.secret_key = os.urandom(24)
-app.config['SESSION_COOKIE_SECURE'] = True   # True in production
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Initialize Firebase
-cred = credentials.Certificate("FIREBASE_CREDENTIALS")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+def init_firebase():
+    # Try environment variables first (for Render)
+    if all(key in os.environ for key in ['FIREBASE_TYPE', 'FIREBASE_PROJECT_ID']):
+        firebase_config = {
+            "type": os.environ.get("FIREBASE_TYPE"),
+            "project_id": os.environ.get("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": os.environ.get("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
+            "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.environ.get("FIREBASE_CLIENT_ID"),
+            "auth_uri": os.environ.get("FIREBASE_AUTH_URI"),
+            "token_uri": os.environ.get("FIREBASE_TOKEN_URI"),
+            "auth_provider_x509_cert_url": os.environ.get("FIREBASE_AUTH_PROVIDER_CERT_URL"),
+            "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL")
+        }
+        return credentials.Certificate(firebase_config)
+    # Fallback to credentials file (for local development)
+    elif os.path.exists("FIREBASE_CREDENTIALS.json"):
+        return credentials.Certificate("FIREBASE_CREDENTIALS.json")
+    else:
+        raise ValueError("No Firebase configuration found")
 
-# Helper Functions
+try:
+    cred = init_firebase()
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print(f"Error initializing Firebase: {e}")
+    db = None  # This will cause the app to fail on database operations
+
+# Helper Functions (remain the same)
 def hash_password(password):
     salt = "fixed_salt_for_hashing"
     return hashlib.sha256((password + salt).encode()).hexdigest()
@@ -54,6 +82,10 @@ def calculate_order_total(items):
             return -1
         total += price * quantity
     return round(total, 2)
+
+# Routes (all your existing routes remain exactly the same)
+# ... [keep all your existing route functions unchanged] ...
+
 
 # Routes
 @app.route("/")
