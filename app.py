@@ -97,7 +97,7 @@ def home():
 @app.route("/login", methods=['GET', 'POST'])
 def login():
     if validate_session():
-        return redirect(url_for('index'))
+        return redirect(url_for('home_page'))
     
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -111,7 +111,7 @@ def login():
             user_ref = db.collection('users').document(username).get()
             if user_ref.exists and user_ref.to_dict().get('password') == hash_password(password):
                 session['username'] = username
-                return redirect(url_for('index'))
+                return redirect(url_for('home_page'))
             flash('Invalid username or password', 'danger')
         except Exception as e:
             logger.error(f"Login error: {str(e)}")
@@ -122,16 +122,15 @@ def login():
 @app.route("/register", methods=['GET', 'POST'])
 def register():
     if validate_session():
-        return redirect(url_for('index'))
+        return redirect(url_for('home_page'))
     
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
         confirm_password = request.form.get('confirm_password', '').strip()
         
-        # Basic validation
-        if not username or not password or not confirm_password:
-            flash('All fields are required', 'danger')
+        if not username or not password:
+            flash('Username and password are required', 'danger')
             return redirect(url_for('register'))
         
         if len(username) < 4:
@@ -147,12 +146,10 @@ def register():
             return redirect(url_for('register'))
         
         try:
-            # Check if user already exists
             if db.collection('users').document(username).get().exists:
                 flash('Username already exists', 'danger')
                 return redirect(url_for('register'))
             
-            # Create new user
             db.collection('users').document(username).set({
                 'username': username,
                 'password': hash_password(password),
@@ -175,8 +172,8 @@ def logout():
     session.pop('username', None)
     return redirect(url_for('login'))
 
-@app.route("/index")
-def index():
+@app.route("/home")
+def home_page():
     if not validate_session():
         return redirect(url_for('login'))
     
@@ -193,13 +190,19 @@ def index():
         # Combine both (bookings come first as they're older)
         all_orders = bookings + orders
         
-        return render_template('index.html', 
-                             username=username,
-                             orders=all_orders[-5:])  # Show last 5 orders
+        return render_template('home.html', 
+                            username=username,
+                            orders=all_orders[-5:])  # Show last 5 orders
     except Exception as e:
-        logger.error(f"Error loading index: {str(e)}")
+        logger.error(f"Error loading home: {str(e)}")
         flash('Error loading dashboard', 'danger')
         return redirect(url_for('login'))
+
+@app.route("/order")
+def order_page():
+    if not validate_session():
+        return redirect(url_for('login'))
+    return render_template('order.html', username=session['username'])
 
 @app.route("/order_history")
 def order_history():
@@ -220,12 +223,12 @@ def order_history():
         all_orders = bookings + orders
         
         return render_template('order_history.html',
-                             username=username,
-                             orders=all_orders)
+                            username=username,
+                            orders=all_orders)
     except Exception as e:
         logger.error(f"Error fetching order history: {str(e)}")
         flash('Error fetching order history', 'danger')
-        return redirect(url_for('index'))
+        return redirect(url_for('home_page'))
 
 @app.route("/api/orders", methods=["POST"])
 def create_order():
@@ -254,7 +257,14 @@ def create_order():
         order_ref = db.collection('orders').document()
         booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
         
+        # Generate QR code
+        qr = qrcode.make(order_ref.id[:8])
+        img_io = io.BytesIO()
+        qr.save(img_io, 'PNG')
+        qr_base64 = base64.b64encode(img_io.getvalue()).decode()
+        
         order_data = {
+            "id": order_ref.id,
             "booking_id": order_ref.id[:8],
             "food_items": data['food_items'],
             "phone_number": data['phone_number'],
@@ -262,7 +272,8 @@ def create_order():
             "status": "pending",
             "created_at": datetime.now(),
             "username": username,
-            "total": round(total, 2)
+            "amount": round(total, 2),
+            "qr_code": qr_base64
         }
         
         # Save to both collections
@@ -270,17 +281,9 @@ def create_order():
         booking_ref.set(order_data)
         logger.info(f"Order created in both collections: {order_data['booking_id']}")
         
-        # Generate QR code
-        qr = qrcode.make(order_data['booking_id'])
-        img_io = io.BytesIO()
-        qr.save(img_io, 'PNG')
-        qr_base64 = base64.b64encode(img_io.getvalue()).decode()
-        
         return jsonify({
             "status": "success",
-            "booking_id": order_data['booking_id'],
-            "qr_code": qr_base64,
-            "order_data": order_data
+            "order": order_data
         }), 201
 
     except Exception as e:
