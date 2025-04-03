@@ -8,17 +8,13 @@ from flask_cors import CORS
 import hashlib
 from datetime import datetime
 import os
-import json
+import logging
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app, supports_credentials=True, resources={
     r"/*": {
-        "origins": [
-            "http://localhost:5000",
-            "https://39c4-2402-3a80-1824-1e9d-d23-3267-5717-624.ngrok-free.app",
-            "https://thefdcomapany.onrender.com"  # Add your Render URL here
-        ],
+        "origins": ["http://localhost:5000", "https://your-render-app.onrender.com"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
@@ -29,217 +25,185 @@ app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Initialize Firebase
 def init_firebase():
-    # Try environment variables first (for Render)
     if all(key in os.environ for key in ['FIREBASE_TYPE', 'FIREBASE_PROJECT_ID']):
-        firebase_config = {
-            "type": os.environ.get("FIREBASE_TYPE"),
-            "project_id": os.environ.get("FIREBASE_PROJECT_ID"),
-            "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID"),
-            "private_key": os.environ.get("FIREBASE_PRIVATE_KEY").replace('\\n', '\n'),
-            "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
-            "client_id": os.environ.get("FIREBASE_CLIENT_ID"),
-            "auth_uri": os.environ.get("FIREBASE_AUTH_URI"),
-            "token_uri": os.environ.get("FIREBASE_TOKEN_URI"),
-            "auth_provider_x509_cert_url": os.environ.get("FIREBASE_AUTH_PROVIDER_CERT_URL"),
-            "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL")
-        }
-        return credentials.Certificate(firebase_config)
-    # Fallback to credentials file (for local development)
-    elif os.path.exists("FIREBASE_CREDENTIALS.json"):
-        return credentials.Certificate("FIREBASE_CREDENTIALS.json")
-    else:
-        raise ValueError("No Firebase configuration found")
+        return credentials.Certificate({
+            "type": os.environ["FIREBASE_TYPE"],
+            "project_id": os.environ["FIREBASE_PROJECT_ID"],
+            "private_key": os.environ["FIREBASE_PRIVATE_KEY"].replace('\\n', '\n'),
+            "client_email": os.environ["FIREBASE_CLIENT_EMAIL"],
+            "token_uri": os.environ["FIREBASE_TOKEN_URI"]
+        })
+    elif os.path.exists("firebase-creds.json"):
+        return credentials.Certificate("firebase-creds.json")
+    raise ValueError("Missing Firebase config")
 
 try:
     cred = init_firebase()
     firebase_admin.initialize_app(cred)
     db = firestore.client()
+    logger.info("Firebase initialized successfully")
 except Exception as e:
-    print(f"Error initializing Firebase: {e}")
-    db = None  # This will cause the app to fail on database operations
+    logger.error(f"Firebase init error: {str(e)}")
+    db = None
 
-# Helper Functions (remain the same)
+# Helper Functions
 def hash_password(password):
-    salt = "fixed_salt_for_hashing"
-    return hashlib.sha256((password + salt).encode()).hexdigest()
+    return hashlib.sha256((password + os.environ.get('PEPPER', 'default_pepper')).encode()).hexdigest()
 
 def validate_session():
     if 'username' not in session:
         return False
+    if db is None:
+        return False
     user_ref = db.collection('users').document(session['username']).get()
     return user_ref.exists
 
-def calculate_order_total(items):
-    total = 0
-    for item in items:
+def validate_order_data(data):
+    if not isinstance(data, dict):
+        return False, "Invalid data format"
+    
+    required_fields = ['roll_number', 'phone_number', 'food_items']
+    missing_fields = [field for field in required_fields if field not in data]
+    if missing_fields:
+        return False, f"Missing required fields: {', '.join(missing_fields)}"
+    
+    if not isinstance(data['food_items'], list) or len(data['food_items']) == 0:
+        return False, "food_items must be a non-empty list"
+    
+    for item in data['food_items']:
         if not isinstance(item, dict):
-            continue
-        price = item.get('price', 0)
-        quantity = item.get('quantity', 0)
-        if price < 0 or quantity < 0:
-            return -1
-        total += price * quantity
-    return round(total, 2)
-
-# Routes (all your existing routes remain exactly the same)
-# ... [keep all your existing route functions unchanged] ...
-
+            return False, "Each food item must be an object"
+        if 'name' not in item or 'price' not in item or 'quantity' not in item:
+            return False, "Each food item must have name, price and quantity"
+        try:
+            float(item['price'])
+            int(item['quantity'])
+        except (ValueError, TypeError):
+            return False, "Price must be a number and quantity must be an integer"
+    
+    return True, ""
 
 # Routes
 @app.route("/")
-def login_page():
-    if validate_session():
-        return redirect(url_for('home'))
-    return render_template('login.html')
+def home():
+    return redirect(url_for('login_page'))
 
 @app.route("/login", methods=['GET', 'POST'])
-def login():
+def login_page():
     if validate_session():
-        return redirect(url_for('home'))
+        return redirect(url_for('index'))
     
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
         
         if not username or not password:
-            flash('Username and password are required', 'danger')
-            return redirect(url_for('login'))
+            flash('Credentials required', 'danger')
+            return redirect(url_for('login_page'))
         
         try:
             user_ref = db.collection('users').document(username).get()
-            if user_ref.exists:
-                user_data = user_ref.to_dict()
-                if user_data.get('password') == hash_password(password):
-                    session['username'] = username
-                    db.collection('users').document(username).update({
-                        'last_login': datetime.now()
-                    })
-                    flash('Login successful!', 'success')
-                    return redirect(url_for('home'))
-            
-            flash('Invalid username or password', 'danger')
+            if user_ref.exists and user_ref.to_dict().get('password') == hash_password(password):
+                session['username'] = username
+                return redirect(url_for('index'))
+            flash('Invalid credentials', 'danger')
         except Exception as e:
-            flash('Login failed. Please try again.', 'danger')
-    
+            logger.error(f"Login error: {str(e)}")
+            flash('Login error', 'danger')
     return render_template('login.html')
-
-@app.route("/register", methods=['GET', 'POST'])
-def register():
-    if validate_session():
-        return redirect(url_for('home'))
-    
-    if request.method == 'POST':
-        # Handle both form and JSON data
-        if request.is_json:
-            data = request.get_json()
-            username = data.get('username', '').strip()
-            password = data.get('password', '').strip()
-            confirm_password = data.get('confirm_password', '').strip()
-        else:
-            username = request.form.get('username', '').strip()
-            password = request.form.get('password', '').strip()
-            confirm_password = request.form.get('confirm_password', '').strip()
-        
-        errors = []
-        if not username or not password:
-            errors.append('Username and password are required')
-        elif len(username) < 4:
-            errors.append('Username must be at least 4 characters')
-        elif len(password) < 8:
-            errors.append('Password must be at least 8 characters')
-        elif password != confirm_password:
-            errors.append('Passwords do not match')
-        
-        if errors:
-            if request.is_json:
-                return jsonify({"status": "error", "errors": errors}), 400
-            for error in errors:
-                flash(error, 'danger')
-        else:
-            try:
-                if db.collection('users').document(username).get().exists:
-                    if request.is_json:
-                        return jsonify({"status": "error", "message": "Username already exists"}), 400
-                    flash('Username already exists', 'danger')
-                else:
-                    db.collection('users').document(username).set({
-                        'username': username,
-                        'password': hash_password(password),
-                        'created_at': datetime.now(),
-                        'last_login': None,
-                        'role': 'user'
-                    })
-                    if request.is_json:
-                        return jsonify({"status": "success", "message": "Registration successful! Please login."})
-                    flash('Registration successful! Please login.', 'success')
-                    return redirect(url_for('login'))
-            except Exception as e:
-                if request.is_json:
-                    return jsonify({"status": "error", "message": "Registration failed. Please try again."}), 500
-                flash('Registration failed. Please try again.', 'danger')
-    
-    return render_template('register.html')
 
 @app.route("/logout")
 def logout():
     session.pop('username', None)
-    flash('You have been logged out successfully', 'info')
     return redirect(url_for('login_page'))
-
-@app.route("/home")
-def home():
-    if not validate_session():
-        return redirect(url_for('login'))
-    
-    try:
-        username = session['username']
-        # Get the 5 most recent orders
-        orders_ref = db.collection("users").document(username).collection("bookings")\
-                          .order_by("created_at", direction=firestore.Query.DESCENDING)\
-                          .limit(5)
-        orders = []
-        for doc in orders_ref.stream():
-            order = doc.to_dict()
-            order['id'] = doc.id
-            orders.append(order)
-        
-        return render_template('home.html', 
-                            username=username,
-                            orders=orders)
-    except Exception as e:
-        flash('Error loading dashboard', 'danger')
-        return redirect(url_for('login'))
 
 @app.route("/index")
 def index():
     if not validate_session():
-        return redirect(url_for('login'))
+        return redirect(url_for('login_page'))
     return render_template('index.html', username=session['username'])
 
-@app.route("/order_history")
-def order_history():
+@app.route("/api/orders", methods=["POST"])
+def create_order():
     if not validate_session():
-        return redirect(url_for('login'))
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    # Check if request contains JSON
+    if not request.is_json:
+        return jsonify({"error": "Request must be JSON"}), 400
     
     try:
-        username = session['username']
-        orders_ref = db.collection("users").document(username).collection("bookings").order_by("created_at", direction=firestore.Query.DESCENDING)
-        orders = []
-        for doc in orders_ref.stream():
-            order = doc.to_dict()
-            order['id'] = doc.id
-            orders.append(order)
+        data = request.get_json()
+        if data is None:
+            return jsonify({"error": "Invalid or empty JSON"}), 400
         
-        return render_template('order_history.html', 
-                            username=username,
-                            orders=orders)
-    except Exception as e:
-        flash('Error fetching order history', 'danger')
-        return redirect(url_for('home'))
+        # Validate order data
+        is_valid, validation_msg = validate_order_data(data)
+        if not is_valid:
+            return jsonify({"error": validation_msg}), 400
 
-# ... [rest of your routes remain the same] ...
+        # Calculate total
+        total = sum(item['price'] * item['quantity'] for item in data['food_items'])
+        
+        # Create order document
+        order_ref = db.collection('orders').document()
+        order_data = {
+            "booking_id": order_ref.id[:8],
+            "food_items": data['food_items'],
+            "phone_number": data['phone_number'],
+            "roll_number": data['roll_number'],
+            "status": "pending",
+            "created_at": datetime.now(),
+            "username": session['username'],
+            "total": round(total, 2)
+        }
+        
+        # Save to database
+        order_ref.set(order_data)
+        logger.info(f"Order created: {order_data['booking_id']}")
+        
+        # Generate QR code
+        qr = qrcode.make(order_data['booking_id'])
+        img_io = io.BytesIO()
+        qr.save(img_io, 'PNG')
+        qr_base64 = base64.b64encode(img_io.getvalue()).decode()
+        
+        return jsonify({
+            "status": "success",
+            "booking_id": order_data['booking_id'],
+            "qr_code": qr_base64,
+            "order_data": order_data
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Order creation failed: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route("/api/orders/<order_id>", methods=["GET"])
+def get_order(order_id):
+    if not validate_session():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        order_ref = db.collection('orders').document(order_id).get()
+        if not order_ref.exists:
+            return jsonify({"error": "Order not found"}), 404
+        
+        order_data = order_ref.to_dict()
+        if order_data['username'] != session['username']:
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        return jsonify({"status": "success", "order": order_data})
+    
+    except Exception as e:
+        logger.error(f"Error fetching order: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
