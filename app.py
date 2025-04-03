@@ -191,11 +191,35 @@ def home_page():
         flash('Error loading dashboard', 'danger')
         return redirect(url_for('login'))
 
-@app.route("/order")
-def order_page():
+# Add this new route for index.html
+@app.route("/index")
+def index():
     if not validate_session():
         return redirect(url_for('login'))
-    return render_template('order.html', username=session['username'])
+    return render_template('index.html', username=session['username'])
+
+@app.route("/order_history")
+def order_history():
+    if not validate_session():
+        return redirect(url_for('login'))
+    
+    try:
+        username = session['username']
+        bookings_ref = db.collection('users').document(username).collection('bookings')
+        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        
+        orders_ref = db.collection('orders').where('username', '==', username)
+        orders = [doc.to_dict() for doc in orders_ref.stream()]
+        
+        all_orders = bookings + orders
+        
+        return render_template('order_history.html',
+                            username=username,
+                            orders=all_orders)
+    except Exception as e:
+        logger.error(f"Error fetching order history: {str(e)}")
+        flash('Error fetching order history', 'danger')
+        return redirect(url_for('home_page'))
 
 @app.route("/api/orders", methods=["POST"])
 def create_order():
