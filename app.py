@@ -12,14 +12,7 @@ import logging
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, supports_credentials=True, resources={
-    r"/*": {
-        "origins": ["http://localhost:5000", "https://your-render-app.onrender.com"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True
-    }
-})
+CORS(app, supports_credentials=True)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -204,38 +197,11 @@ def order_page():
         return redirect(url_for('login'))
     return render_template('order.html', username=session['username'])
 
-@app.route("/order_history")
-def order_history():
-    if not validate_session():
-        return redirect(url_for('login'))
-    
-    try:
-        username = session['username']
-        # Get bookings (old orders)
-        bookings_ref = db.collection('users').document(username).collection('bookings')
-        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
-        
-        # Get orders (new orders)
-        orders_ref = db.collection('orders').where('username', '==', username)
-        orders = [doc.to_dict() for doc in orders_ref.stream()]
-        
-        # Combine both (bookings come first as they're older)
-        all_orders = bookings + orders
-        
-        return render_template('order_history.html',
-                            username=username,
-                            orders=all_orders)
-    except Exception as e:
-        logger.error(f"Error fetching order history: {str(e)}")
-        flash('Error fetching order history', 'danger')
-        return redirect(url_for('home_page'))
-
 @app.route("/api/orders", methods=["POST"])
 def create_order():
     if not validate_session():
         return jsonify({"error": "Unauthorized"}), 401
     
-    # Check if request contains JSON
     if not request.is_json:
         return jsonify({"error": "Request must be JSON"}), 400
     
@@ -244,20 +210,16 @@ def create_order():
         if data is None:
             return jsonify({"error": "Invalid or empty JSON"}), 400
         
-        # Validate order data
         is_valid, validation_msg = validate_order_data(data)
         if not is_valid:
             return jsonify({"error": validation_msg}), 400
 
-        # Calculate total
         total = sum(item['price'] * item['quantity'] for item in data['food_items'])
         
-        # Create order document in both collections for compatibility
         username = session['username']
         order_ref = db.collection('orders').document()
         booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
         
-        # Generate QR code
         qr = qrcode.make(order_ref.id[:8])
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
@@ -276,10 +238,9 @@ def create_order():
             "qr_code": qr_base64
         }
         
-        # Save to both collections
         order_ref.set(order_data)
         booking_ref.set(order_data)
-        logger.info(f"Order created in both collections: {order_data['booking_id']}")
+        logger.info(f"Order created: {order_data['booking_id']}")
         
         return jsonify({
             "status": "success",
