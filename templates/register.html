@@ -18,7 +18,7 @@
             <h2>Create Account</h2>
             <p>Join us to start ordering delicious food</p>
             
-            <form id="register-form">
+            <form id="register-form" method="POST" action="/register">
                 <div class="input-group">
                     <label for="register-username">
                         <i class="fas fa-user"></i>
@@ -63,6 +63,16 @@
                     <i class="fas fa-user-plus"></i> Register
                 </button>
             </form>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flashes">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
         </div>
         
         <div class="login-link">
@@ -127,50 +137,27 @@
             }
         });
         
-        document.getElementById('register-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const username = document.getElementById('register-username').value.trim();
-            const password = document.getElementById('register-password').value.trim();
-            const confirmPassword = document.getElementById('confirm-password').value.trim();
+        // Traditional form submission with validation
+        document.getElementById('register-form').addEventListener('submit', function(e) {
+            const password = document.getElementById('register-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
             const errorElement = document.getElementById('register-error');
             
-            // Basic validation
+            // Client-side validation
             if (password !== confirmPassword) {
+                e.preventDefault();
                 errorElement.textContent = 'Passwords do not match';
                 return;
             }
             
             if (password.length < 8) {
+                e.preventDefault();
                 errorElement.textContent = 'Password must be at least 8 characters';
                 return;
             }
             
-            try {
-                const response = await fetch('/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        username: username,
-                        password: password,
-                        confirm_password: confirmPassword
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    alert(data.message);
-                    window.location.href = '/login';
-                } else {
-                    errorElement.textContent = data.error || 'Registration failed';
-                }
-            } catch (error) {
-                errorElement.textContent = 'An error occurred. Please try again.';
-                console.error('Registration error:', error);
-            }
+            // If validation passes, the form will submit normally
+            errorElement.textContent = '';
         });
     </script>
 </body>
