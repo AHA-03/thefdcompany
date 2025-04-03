@@ -172,26 +172,23 @@ def home_page():
     
     try:
         username = session['username']
-        # Get user's bookings (old orders)
         bookings_ref = db.collection('users').document(username).collection('bookings')
         bookings = [doc.to_dict() for doc in bookings_ref.stream()]
         
-        # Get user's orders (new orders)
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
-        # Combine both (bookings come first as they're older)
         all_orders = bookings + orders
         
         return render_template('home.html', 
                             username=username,
-                            orders=all_orders[-5:])  # Show last 5 orders
+                            orders=all_orders[-5:])
     except Exception as e:
         logger.error(f"Error loading home: {str(e)}")
         flash('Error loading dashboard', 'danger')
         return redirect(url_for('login'))
 
-# Add this new route for index.html
+# This is the route that will render index.html for ordering food
 @app.route("/index")
 def index():
     if not validate_session():
