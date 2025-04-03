@@ -121,6 +121,26 @@
             padding: 20px;
         }
         
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        
+        .alert {
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        
+        .alert-success {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        
+        .alert-danger {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        
         .main-header {
             display: flex;
             justify-content: space-between;
@@ -202,6 +222,11 @@
             font-weight: 500;
         }
         
+        .status-pending {
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
+        }
+        
         .status-confirmed {
             background: rgba(76, 175, 80, 0.2);
             color: #4CAF50;
@@ -243,6 +268,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 12px;
+            margin-top: 5px;
         }
         
         .download-btn:hover {
@@ -270,7 +296,7 @@
                     </div>
                     <div class="user-info">
                         <span class="username">{{ username }}</span>
-                        <span class="user-email">{{ session['username'] }}@fooddispenser.com</span>
+                        <span class="user-email">{{ username }}@fooddispenser.com</span>
                     </div>
                 </div>
             </div>
@@ -279,7 +305,7 @@
                     <a href="#"><i class="fas fa-home"></i> Dashboard</a>
                 </li>
                 <li class="nav-item">
-                    <a href="{{ url_for('index') }}"><i class="fas fa-utensils"></i> Order Food</a>
+                    <a href="{{ url_for('order_page') }}"><i class="fas fa-utensils"></i> Order Food</a>
                 </li>
                 <li class="nav-item logout">
                     <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
@@ -287,6 +313,16 @@
             </ul>
         </nav>
         <div class="content-area">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flash-messages">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+            
             <header class="main-header">
                 <div>
                     <h2>Welcome back, <span class="highlight">{{ username }}</span>! 👋</h2>
@@ -298,7 +334,7 @@
                 <div class="section-header">
                     <h3>Quick Actions</h3>
                 </div>
-                <button class="action-btn" onclick="window.location.href='{{ url_for('index') }}'">
+                <button class="action-btn" onclick="window.location.href='{{ url_for('order_page') }}'">
                     <i class="fas fa-plus"></i> New Order
                 </button>
             </div>
@@ -323,8 +359,14 @@
                         {% for order in orders %}
                         <tr>
                             <td>
-                                <div>#{{ order.id[:8] }}</div>
-                                <div class="order-date">{{ order.created_at.strftime('%d %b %Y') }}</div>
+                                <div>#{{ order.booking_id }}</div>
+                                <div class="order-date">
+                                    {% if order.created_at is string %}
+                                        {{ order.created_at }}
+                                    {% else %}
+                                        {{ order.created_at.strftime('%d %b %Y') }}
+                                    {% endif %}
+                                </div>
                             </td>
                             <td>
                                 <div class="order-items">
@@ -347,7 +389,7 @@
                                 <div style="text-align: center;">
                                     <img src="data:image/png;base64,{{ order.qr_code }}" class="qr-code-small">
                                     <button class="download-btn" 
-                                            onclick="downloadQR('{{ order.qr_code }}', 'order_{{ order.id }}')">
+                                            onclick="downloadQR('{{ order.qr_code }}', 'order_{{ order.booking_id }}')">
                                         Download
                                     </button>
                                 </div>
