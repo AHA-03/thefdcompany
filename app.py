@@ -92,10 +92,10 @@ def validate_order_data(data):
 # Routes
 @app.route("/")
 def home():
-    return redirect(url_for('login_page'))
+    return redirect(url_for('login'))
 
 @app.route("/login", methods=['GET', 'POST'])
-def login_page():
+def login():
     if validate_session():
         return redirect(url_for('index'))
     
@@ -104,33 +104,85 @@ def login_page():
         password = request.form.get('password', '').strip()
         
         if not username or not password:
-            flash('Credentials required', 'danger')
-            return redirect(url_for('login_page'))
+            flash('Username and password are required', 'danger')
+            return redirect(url_for('login'))
         
         try:
             user_ref = db.collection('users').document(username).get()
             if user_ref.exists and user_ref.to_dict().get('password') == hash_password(password):
                 session['username'] = username
                 return redirect(url_for('index'))
-            flash('Invalid credentials', 'danger')
+            flash('Invalid username or password', 'danger')
         except Exception as e:
             logger.error(f"Login error: {str(e)}")
             flash('Login error', 'danger')
+    
     return render_template('login.html')
+
+@app.route("/register", methods=['GET', 'POST'])
+def register():
+    if validate_session():
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+        
+        # Basic validation
+        if not username or not password or not confirm_password:
+            flash('All fields are required', 'danger')
+            return redirect(url_for('register'))
+        
+        if len(username) < 4:
+            flash('Username must be at least 4 characters', 'danger')
+            return redirect(url_for('register'))
+        
+        if len(password) < 8:
+            flash('Password must be at least 8 characters', 'danger')
+            return redirect(url_for('register'))
+        
+        if password != confirm_password:
+            flash('Passwords do not match', 'danger')
+            return redirect(url_for('register'))
+        
+        try:
+            # Check if user already exists
+            if db.collection('users').document(username).get().exists:
+                flash('Username already exists', 'danger')
+                return redirect(url_for('register'))
+            
+            # Create new user
+            db.collection('users').document(username).set({
+                'username': username,
+                'password': hash_password(password),
+                'created_at': datetime.now(),
+                'last_login': None,
+                'role': 'user'
+            })
+            
+            flash('Registration successful! Please login.', 'success')
+            return redirect(url_for('login'))
+            
+        except Exception as e:
+            logger.error(f"Registration error: {str(e)}")
+            flash('Registration failed. Please try again.', 'danger')
+    
+    return render_template('register.html')
 
 @app.route("/logout")
 def logout():
     session.pop('username', None)
-    return redirect(url_for('login_page'))
+    return redirect(url_for('login'))
 
 @app.route("/index")
 def index():
     if not validate_session():
-        return redirect(url_for('login_page'))
+        return redirect(url_for('login'))
     
-    # Get user's bookings (old orders)
     try:
         username = session['username']
+        # Get user's bookings (old orders)
         bookings_ref = db.collection('users').document(username).collection('bookings')
         bookings = [doc.to_dict() for doc in bookings_ref.stream()]
         
@@ -147,12 +199,12 @@ def index():
     except Exception as e:
         logger.error(f"Error loading index: {str(e)}")
         flash('Error loading dashboard', 'danger')
-        return redirect(url_for('login_page'))
+        return redirect(url_for('login'))
 
 @app.route("/order_history")
 def order_history():
     if not validate_session():
-        return redirect(url_for('login_page'))
+        return redirect(url_for('login'))
     
     try:
         username = session['username']
