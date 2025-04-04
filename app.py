@@ -104,6 +104,10 @@ def login():
             user_ref = db.collection('users').document(username).get()
             if user_ref.exists and user_ref.to_dict().get('password') == hash_password(password):
                 session['username'] = username
+                # Update last login time
+                db.collection('users').document(username).update({
+                    'last_login': datetime.now()
+                })
                 return redirect(url_for('home_page'))
             flash('Invalid username or password', 'danger')
         except Exception as e:
@@ -172,23 +176,22 @@ def home_page():
     
     try:
         username = session['username']
-        bookings_ref = db.collection('users').document(username).collection('bookings')
-        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        # Get last 5 orders sorted by date (newest first)
+        orders_ref = db.collection('orders')\
+                      .where('username', '==', username)\
+                      .order_by('created_at', direction=firestore.Query.DESCENDING)\
+                      .limit(5)
         
-        orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
-        
-        all_orders = bookings + orders
         
         return render_template('home.html', 
                             username=username,
-                            orders=all_orders[-5:])
+                            orders=orders)
     except Exception as e:
         logger.error(f"Error loading home: {str(e)}")
         flash('Error loading dashboard', 'danger')
         return redirect(url_for('login'))
 
-# This is the route that will render index.html for ordering food
 @app.route("/index")
 def index():
     if not validate_session():
@@ -202,17 +205,16 @@ def order_history():
     
     try:
         username = session['username']
-        bookings_ref = db.collection('users').document(username).collection('bookings')
-        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        # Get all orders sorted by date (newest first)
+        orders_ref = db.collection('orders')\
+                      .where('username', '==', username)\
+                      .order_by('created_at', direction=firestore.Query.DESCENDING)
         
-        orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
-        all_orders = orders
-        
         return render_template('order_history.html',
-                            username=username,
-                            orders=all_orders)
+                           username=username,
+                           orders=orders)
     except Exception as e:
         logger.error(f"Error fetching order history: {str(e)}")
         flash('Error fetching order history', 'danger')
@@ -239,8 +241,8 @@ def create_order():
         
         username = session['username']
         order_ref = db.collection('orders').document()
-        booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
         
+        # Generate QR code
         qr = qrcode.make(order_ref.id[:8])
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
@@ -259,8 +261,8 @@ def create_order():
             "qr_code": qr_base64
         }
         
+        # Store order in the main orders collection
         order_ref.set(order_data)
-        booking_ref.set(order_data)
         logger.info(f"Order created: {order_data['booking_id']}")
         
         return jsonify({
