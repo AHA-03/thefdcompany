@@ -208,7 +208,7 @@ def order_history():
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
-        all_orders = bookings + orders
+        all_orders = orders
         
         return render_template('order_history.html',
                             username=username,
