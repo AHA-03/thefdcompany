@@ -256,6 +256,7 @@ def create_order():
             "created_at": datetime.now(),
             "username": username,
             "amount": round(total, 2),
+            "qr_code": qr_base64
         }
         
         order_ref.set(order_data)
