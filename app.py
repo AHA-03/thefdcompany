@@ -182,7 +182,7 @@ def home_page():
         
         return render_template('home.html', 
                             username=username,
-                            orders=all_orders[-5:])
+                            orders=orders[-5:])
     except Exception as e:
         logger.error(f"Error loading home: {str(e)}")
         flash('Error loading dashboard', 'danger')
@@ -212,7 +212,7 @@ def order_history():
         
         return render_template('order_history.html',
                             username=username,
-                            orders=all_orders)
+                            orders=orders)
     except Exception as e:
         logger.error(f"Error fetching order history: {str(e)}")
         flash('Error fetching order history', 'danger')
