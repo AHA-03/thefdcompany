@@ -252,11 +252,10 @@ def create_order():
             "food_items": data['food_items'],
             "phone_number": data['phone_number'],
             "roll_number": data['roll_number'],
-            "status": "pending",
+            "status": "confirmed",
             "created_at": datetime.now(),
             "username": username,
             "amount": round(total, 2),
-            "qr_code": qr_base64
         }
         
         order_ref.set(order_data)
