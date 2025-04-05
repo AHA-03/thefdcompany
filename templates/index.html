@@ -221,7 +221,7 @@
                 
                 const result = await response.json();
                 if (response.ok) {
-                    showConfirmation(result.qr_code);
+                    showConfirmation(result.order.qr_code);  // CHANGED THIS LINE
                 } else {
                     throw new Error(result.message || 'Order failed');
                 }
