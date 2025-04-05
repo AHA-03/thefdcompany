@@ -9,7 +9,6 @@ import hashlib
 from datetime import datetime
 import os
 import logging
-import time
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -23,10 +22,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Firebase configuration
-FIREBASE_INDEX_URL = os.environ.get('FIREBASE_INDEX_URL', 
-    "https://console.firebase.google.com/v1/r/project/food-dispenser-22913/firestore/indexes?create_composite=ClNwcm9qZWN0cy9mb29kLWRpc3BlbnNlci0yMjkxMy9kYXRhYmFzZXMvKGRlZmF1bHQpL2NvbGxlY3Rpb25Hcm91cHMvb3JkZXJzL2luZGV4ZXMvXxABGgwKCHVzZXJuYW1lEAEaDgoKY3JlYXRlZF9hdBACGgwKCF9fbmFtZV9fEAI")
-
+# Initialize Firebase
 def init_firebase():
     if all(key in os.environ for key in ['FIREBASE_TYPE', 'FIREBASE_PROJECT_ID']):
         return credentials.Certificate({
@@ -86,22 +82,6 @@ def validate_order_data(data):
     
     return True, ""
 
-def get_user_orders(username, limit=None):
-    try:
-        query = db.collection('orders')\
-                .where('username', '==', username)\
-                .order_by('created_at', direction=firestore.Query.DESCENDING)
-        
-        if limit:
-            query = query.limit(limit)
-        
-        return [doc.to_dict() for doc in query.stream()]
-    except Exception as e:
-        logger.error(f"Error fetching orders: {str(e)}")
-        if "requires an index" in str(e):
-            logger.error(f"Please create the required index: {FIREBASE_INDEX_URL}")
-        return []
-
 # Routes
 @app.route("/")
 def home():
@@ -124,9 +104,6 @@ def login():
             user_ref = db.collection('users').document(username).get()
             if user_ref.exists and user_ref.to_dict().get('password') == hash_password(password):
                 session['username'] = username
-                db.collection('users').document(username).update({
-                    'last_login': datetime.now()
-                })
                 return redirect(url_for('home_page'))
             flash('Invalid username or password', 'danger')
         except Exception as e:
@@ -193,13 +170,25 @@ def home_page():
     if not validate_session():
         return redirect(url_for('login'))
     
-    username = session['username']
-    orders = get_user_orders(username, limit=5)
-    
-    return render_template('home.html', 
-                        username=username,
-                        orders=orders)
+    try:
+        username = session['username']
+        bookings_ref = db.collection('users').document(username).collection('bookings')
+        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        
+        orders_ref = db.collection('orders').where('username', '==', username)
+        orders = [doc.to_dict() for doc in orders_ref.stream()]
+        
+        all_orders = bookings + orders
+        
+        return render_template('home.html', 
+                            username=username,
+                            orders=all_orders[-5:])
+    except Exception as e:
+        logger.error(f"Error loading home: {str(e)}")
+        flash('Error loading dashboard', 'danger')
+        return redirect(url_for('login'))
 
+# This is the route that will render index.html for ordering food
 @app.route("/index")
 def index():
     if not validate_session():
@@ -211,12 +200,23 @@ def order_history():
     if not validate_session():
         return redirect(url_for('login'))
     
-    username = session['username']
-    orders = get_user_orders(username)
-    
-    return render_template('order_history.html',
-                       username=username,
-                       orders=orders)
+    try:
+        username = session['username']
+        bookings_ref = db.collection('users').document(username).collection('bookings')
+        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        
+        orders_ref = db.collection('orders').where('username', '==', username)
+        orders = [doc.to_dict() for doc in orders_ref.stream()]
+        
+        all_orders = bookings + orders
+        
+        return render_template('order_history.html',
+                            username=username,
+                            orders=all_orders)
+    except Exception as e:
+        logger.error(f"Error fetching order history: {str(e)}")
+        flash('Error fetching order history', 'danger')
+        return redirect(url_for('home_page'))
 
 @app.route("/api/orders", methods=["POST"])
 def create_order():
@@ -239,6 +239,7 @@ def create_order():
         
         username = session['username']
         order_ref = db.collection('orders').document()
+        booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
         
         qr = qrcode.make(order_ref.id[:8])
         img_io = io.BytesIO()
@@ -259,6 +260,7 @@ def create_order():
         }
         
         order_ref.set(order_data)
+        booking_ref.set(order_data)
         logger.info(f"Order created: {order_data['booking_id']}")
         
         return jsonify({
