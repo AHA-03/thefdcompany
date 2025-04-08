@@ -218,6 +218,8 @@ def order_history():
         flash('Error fetching order history', 'danger')
         return redirect(url_for('home_page'))
 
+import secrets  # For generating random IDs
+
 @app.route("/api/orders", methods=["POST"])
 def create_order():
     if not validate_session():
@@ -236,19 +238,22 @@ def create_order():
             return jsonify({"error": validation_msg}), 400
 
         total = sum(item['price'] * item['quantity'] for item in data['food_items'])
-        
         username = session['username']
-        order_ref = db.collection('orders').document()
-        booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
+
+        # Generate a random 8-character alphanumeric ID
+        order_id = secrets.token_urlsafe(6)[:8]  # e.g., "3xJ9aB2f"
         
-        qr = qrcode.make(order_ref.id[:8])
+        # Manually set the document ID (8 chars) instead of auto-generating
+        order_ref = db.collection('orders').document(order_id)
+        
+        # Generate QR code with the 8-digit ID
+        qr = qrcode.make(order_id)
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
         qr_base64 = base64.b64encode(img_io.getvalue()).decode()
         
         order_data = {
-            "id": order_ref.id,
-            "booking_id": order_ref.id[:8],
+            "id": order_id,  # Only the 8-char ID (no 20-char Firestore ID)
             "food_items": data['food_items'],
             "phone_number": data['phone_number'],
             "roll_number": data['roll_number'],
@@ -256,12 +261,15 @@ def create_order():
             "created_at": datetime.now(),
             "username": username,
             "amount": round(total, 2),
-            "qr_code": qr_base64
+            "qr_code": qr_base64  # QR contains the 8-char ID
         }
         
+        # Save to Firestore with the custom 8-char ID
         order_ref.set(order_data)
+        
+        # Also save to user's bookings subcollection
+        booking_ref = db.collection('users').document(username).collection('bookings').document(order_id)
         booking_ref.set(order_data)
-        logger.info(f"Order created: {order_data['booking_id']}")
         
         return jsonify({
             "status": "success",
