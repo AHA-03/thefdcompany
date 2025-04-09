@@ -77,6 +77,7 @@
             padding: 5px;
             border: 1px solid #7b1fa2;
             background: white;
+            cursor: pointer;
         }
         #confirmation {
             display: none;
@@ -135,6 +136,17 @@
             display: inline-block;
             margin: 5px 0;
         }
+        .gpay-button {
+            background: #4285F4 !important;
+            width: 100%;
+            padding: 12px;
+            color: white;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -167,12 +179,19 @@
             <button class="download-btn" id="download-btn">Download QR Code</button>
         </div>
 
-        <!-- Added Google Pay QR Section -->
+        <!-- Updated Payment Section with your UPI ID -->
         <div class="payment-section">
-            <h4>Pay with Google Pay</h4>
-            <img src="https://drive.google.com/uc?export=view&id=1wA5WriTh8x2vhDCnudoUK0p8KcP4Sr60" class="qr-code" alt="Google Pay QR Code">
-            <div class="upi-id">yourupi@id</div>
-            <p>Scan to pay via Google Pay</p>
+            <h4>Pay with UPI</h4>
+            <!-- Replace with your QR code image (upload to Drive first) -->
+            <img src="https://drive.google.com/uc?export=view&id=YOUR_QR_FILE_ID" 
+                 class="qr-code" 
+                 alt="UPI QR Code"
+                 onclick="openGpay()">
+            <div class="upi-id">aadeesh005@okshi</div>
+            <p>Scan QR or click below to pay</p>
+            <button class="gpay-button" onclick="openGpay()">
+                Open in GPay/PhonePe/Paytm
+            </button>
         </div>
     </div>
 
@@ -214,6 +233,11 @@
             });
             document.getElementById('total-price').textContent = `Total: ₹${total}`;
             document.getElementById('order-btn').disabled = total <= 0;
+        }
+
+        function openGpay() {
+            const total = document.getElementById('total-price').innerText.replace('Total: ₹', '');
+            window.open(`upi://pay?pa=aadeesh005@okshi&pn=Aadeesh&am=${total}&cu=INR`, '_blank');
         }
 
         async function placeOrder() {
