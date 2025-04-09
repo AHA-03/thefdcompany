@@ -71,8 +71,8 @@
             margin: 15px 0;
         }
         .qr-code {
-            width: 80px;
-            height: 80px;
+            width: 180px;
+            height: 180px;
             margin: 0 auto;
             padding: 5px;
             border: 1px solid #7b1fa2;
@@ -122,6 +122,19 @@
             color: #bb86fc;
             text-decoration: none;
         }
+        .payment-section {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #333;
+        }
+        .upi-id {
+            font-family: monospace;
+            background: #333;
+            padding: 5px 10px;
+            border-radius: 3px;
+            display: inline-block;
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -152,6 +165,14 @@
             <div class="qr-code" id="qr-code"></div>
             <p>Show this QR code at counter</p>
             <button class="download-btn" id="download-btn">Download QR Code</button>
+        </div>
+
+        <!-- Added Google Pay QR Section -->
+        <div class="payment-section">
+            <h4>Pay with Google Pay</h4>
+            <img src="https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=aadeessh005@oksbi&choe=UTF-8" class="qr-code" alt="Google Pay QR Code">
+            <div class="upi-id">aadeessh005@oksbi</div>
+            <p>Scan to pay via Google Pay</p>
         </div>
     </div>
 
@@ -221,7 +242,7 @@
                 
                 const result = await response.json();
                 if (response.ok) {
-                    showConfirmation(result.order.qr_code);  // CHANGED THIS LINE
+                    showConfirmation(result.order.qr_code);
                 } else {
                     throw new Error(result.message || 'Order failed');
                 }
@@ -250,7 +271,7 @@
 
         function showConfirmation(qrCode) {
             document.getElementById('qr-code').innerHTML = 
-                `<img src="data:image/png;base64,${qrCode}" width="80" height="80">`;
+                `<img src="data:image/png;base64,${qrCode}" width="180" height="180">`;
             document.getElementById('confirmation').style.display = 'block';
             
             document.getElementById('download-btn').onclick = function() {
