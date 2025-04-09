@@ -9,6 +9,7 @@ import hashlib
 from datetime import datetime
 import os
 import logging
+import secrets
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -81,6 +82,15 @@ def validate_order_data(data):
             return False, "Price must be a number and quantity must be an integer"
     
     return True, ""
+
+def generate_qr_code(order_id):
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(order_id)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffered = io.BytesIO()
+    img.save(buffered)
+    return base64.b64encode(buffered.getvalue()).decode()
 
 # Routes
 @app.route("/")
@@ -178,8 +188,6 @@ def home_page():
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
-        
-        
         return render_template('home.html', 
                             username=username,
                             orders=orders[-5:])
@@ -188,7 +196,6 @@ def home_page():
         flash('Error loading dashboard', 'danger')
         return redirect(url_for('login'))
 
-# This is the route that will render index.html for ordering food
 @app.route("/index")
 def index():
     if not validate_session():
@@ -202,13 +209,8 @@ def order_history():
     
     try:
         username = session['username']
-        bookings_ref = db.collection('users').document(username).collection('bookings')
-        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
-        
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
-        
-    
         
         return render_template('order_history.html',
                             username=username,
@@ -217,8 +219,6 @@ def order_history():
         logger.error(f"Error fetching order history: {str(e)}")
         flash('Error fetching order history', 'danger')
         return redirect(url_for('home_page'))
-
-import secrets  # For generating random IDs
 
 @app.route("/api/orders", methods=["POST"])
 def create_order():
@@ -239,45 +239,75 @@ def create_order():
 
         total = sum(item['price'] * item['quantity'] for item in data['food_items'])
         username = session['username']
+        order_id = secrets.token_urlsafe(6)[:8]
 
-        # Generate a random 8-character alphanumeric ID
-        order_id = secrets.token_urlsafe(6)[:8]  # e.g., "3xJ9aB2f"
-        
-        # Manually set the document ID (8 chars) instead of auto-generating
-        order_ref = db.collection('orders').document(order_id)
-        
-        # Generate QR code with the 8-digit ID
-        qr = qrcode.make(order_id)
-        img_io = io.BytesIO()
-        qr.save(img_io, 'PNG')
-        qr_base64 = base64.b64encode(img_io.getvalue()).decode()
-        
         order_data = {
-            "id": order_id,  # Only the 8-char ID (no 20-char Firestore ID)
+            "id": order_id,
             "food_items": data['food_items'],
             "phone_number": data['phone_number'],
             "roll_number": data['roll_number'],
-            "status": "confirmed",
+            "status": "pending_payment",
             "created_at": datetime.now(),
             "username": username,
             "amount": round(total, 2),
-            "qr_code": qr_base64  # QR contains the 8-char ID
+            "qr_code": None
         }
         
-        # Save to Firestore with the custom 8-char ID
-        order_ref.set(order_data)
-        
-        # Also save to user's bookings subcollection
-        booking_ref = db.collection('users').document(username).collection('bookings').document(order_id)
-        booking_ref.set(order_data)
+        db.collection('orders').document(order_id).set(order_data)
+        db.collection('users').document(username).collection('bookings').document(order_id).set(order_data)
         
         return jsonify({
             "status": "success",
-            "order": order_data
+            "order_id": order_id,
+            "total": total,
+            "upi_id": "aadeessh005@oksbi"
         }), 201
 
     except Exception as e:
         logger.error(f"Order creation failed: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route("/api/orders/<order_id>/verify_payment", methods=["POST"])
+def verify_payment(order_id):
+    if not validate_session():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        order_ref = db.collection('orders').document(order_id)
+        order = order_ref.get()
+        
+        if not order.exists:
+            return jsonify({"error": "Order not found"}), 404
+        
+        if order.to_dict()['username'] != session['username']:
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        # In production, verify payment with UPI service here
+        # For demo, we'll just mark as paid
+        
+        qr_code = generate_qr_code(order_id)
+        
+        order_ref.update({
+            "status": "paid",
+            "paid_at": datetime.now(),
+            "qr_code": qr_code
+        })
+        
+        # Update in user's bookings collection
+        db.collection('users').document(session['username']).collection('bookings').document(order_id).update({
+            "status": "paid",
+            "paid_at": datetime.now(),
+            "qr_code": qr_code
+        })
+        
+        return jsonify({
+            "status": "success",
+            "qr_code": qr_code,
+            "order_id": order_id
+        })
+
+    except Exception as e:
+        logger.error(f"Payment verification failed: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
