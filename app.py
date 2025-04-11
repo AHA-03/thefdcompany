@@ -178,11 +178,11 @@ def home_page():
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
-        all_orders = bookings + orders
+        
         
         return render_template('home.html', 
                             username=username,
-                            orders=all_orders[-5:])
+                            orders=orders[-5:])
     except Exception as e:
         logger.error(f"Error loading home: {str(e)}")
         flash('Error loading dashboard', 'danger')
@@ -208,15 +208,17 @@ def order_history():
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
-        all_orders = bookings + orders
+    
         
         return render_template('order_history.html',
                             username=username,
-                            orders=all_orders)
+                            orders=orders)
     except Exception as e:
         logger.error(f"Error fetching order history: {str(e)}")
         flash('Error fetching order history', 'danger')
         return redirect(url_for('home_page'))
+
+import secrets  # For generating random IDs
 
 @app.route("/api/orders", methods=["POST"])
 def create_order():
@@ -236,32 +238,38 @@ def create_order():
             return jsonify({"error": validation_msg}), 400
 
         total = sum(item['price'] * item['quantity'] for item in data['food_items'])
-        
         username = session['username']
-        order_ref = db.collection('orders').document()
-        booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
+
+        # Generate a random 8-character alphanumeric ID
+        order_id = secrets.token_urlsafe(6)[:8]  # e.g., "3xJ9aB2f"
         
-        qr = qrcode.make(order_ref.id[:8])
+        # Manually set the document ID (8 chars) instead of auto-generating
+        order_ref = db.collection('orders').document(order_id)
+        
+        # Generate QR code with the 8-digit ID
+        qr = qrcode.make(order_id)
         img_io = io.BytesIO()
         qr.save(img_io, 'PNG')
         qr_base64 = base64.b64encode(img_io.getvalue()).decode()
         
         order_data = {
-            "id": order_ref.id,
-            "booking_id": order_ref.id[:8],
+            "id": order_id,  # Only the 8-char ID (no 20-char Firestore ID)
             "food_items": data['food_items'],
             "phone_number": data['phone_number'],
             "roll_number": data['roll_number'],
-            "status": "pending",
+            "status": "confirmed",
             "created_at": datetime.now(),
             "username": username,
             "amount": round(total, 2),
-            "qr_code": qr_base64
+            "qr_code": qr_base64  # QR contains the 8-char ID
         }
         
+        # Save to Firestore with the custom 8-char ID
         order_ref.set(order_data)
+        
+        # Also save to user's bookings subcollection
+        booking_ref = db.collection('users').document(username).collection('bookings').document(order_id)
         booking_ref.set(order_data)
-        logger.info(f"Order created: {order_data['booking_id']}")
         
         return jsonify({
             "status": "success",
