@@ -71,13 +71,12 @@
             margin: 15px 0;
         }
         .qr-code {
-            width: 180px;
-            height: 180px;
+            width: 80px;
+            height: 80px;
             margin: 0 auto;
             padding: 5px;
             border: 1px solid #7b1fa2;
             background: white;
-            cursor: pointer;
         }
         #confirmation {
             display: none;
@@ -123,30 +122,6 @@
             color: #bb86fc;
             text-decoration: none;
         }
-        .payment-section {
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #333;
-        }
-        .upi-id {
-            font-family: monospace;
-            background: #333;
-            padding: 5px 10px;
-            border-radius: 3px;
-            display: inline-block;
-            margin: 5px 0;
-        }
-        .gpay-button {
-            background: #4285F4 !important;
-            width: 100%;
-            padding: 12px;
-            color: white;
-            font-weight: bold;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
     </style>
 </head>
 <body>
@@ -173,14 +148,6 @@
 
     <div class="card" id="confirmation">
         <h3>Order Confirmed</h3>
-        
-        <div class="payment-section">
-            <h4>Pay with UPI</h4>
-            <div class="upi-id">aadeessh005@oksbi</div>
-            <p>Click below to pay with GPay</p>
-            <button class="gpay-button" onclick="openGpay()">Pay with GPay</button>
-        </div>
-        
         <div class="qr-container">
             <div class="qr-code" id="qr-code"></div>
             <p>Show this QR code at counter</p>
@@ -224,18 +191,8 @@
             document.querySelectorAll('.food-item').forEach(item => {
                 total += parseInt(item.dataset.price) * parseInt(item.querySelector('.qty').textContent);
             });
-            document.getElementById('total-price').textContent = Total: ₹${total};
+            document.getElementById('total-price').textContent = `Total: ₹${total}`;
             document.getElementById('order-btn').disabled = total <= 0;
-        }
-
-        function openGpay() {
-            const total = document.getElementById('total-price').innerText.replace('Total: ₹', '').trim();
-            if (!total || isNaN(total) || Number(total) <= 0) {
-                alert("Please select food items to generate the payment link.");
-                return;
-            }
-            const upiUrl = upi://pay?pa=aadeessh005@oksbi&pn=Aadeesh&am=${total}&cu=INR;
-            window.location.href = upiUrl; // Works better on mobile
         }
 
         async function placeOrder() {
@@ -264,7 +221,7 @@
                 
                 const result = await response.json();
                 if (response.ok) {
-                    showConfirmation(result.order.qr_code);
+                    showConfirmation(result.qr_code);
                 } else {
                     throw new Error(result.message || 'Order failed');
                 }
@@ -293,7 +250,7 @@
 
         function showConfirmation(qrCode) {
             document.getElementById('qr-code').innerHTML = 
-                <img src="data:image/png;base64,${qrCode}" width="180" height="180">;
+                `<img src="data:image/png;base64,${qrCode}" width="80" height="80">`;
             document.getElementById('confirmation').style.display = 'block';
             
             document.getElementById('download-btn').onclick = function() {
@@ -305,7 +262,7 @@
 
         function downloadQRCode(qrCode) {
             const link = document.createElement('a');
-            link.href = data:image/png;base64,${qrCode};
+            link.href = `data:image/png;base64,${qrCode}`;
             link.download = 'food_order_qr.png';
             document.body.appendChild(link);
             link.click();
