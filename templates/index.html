@@ -69,7 +69,6 @@
         .qr-container {
             text-align: center;
             margin: 15px 0;
-            display: none;
         }
         .qr-code {
             width: 180px;
@@ -127,6 +126,7 @@
         .payment-section {
             margin-bottom: 20px;
             padding-bottom: 15px;
+            border-bottom: 1px solid #333;
         }
         .upi-id {
             font-family: monospace;
@@ -145,18 +145,6 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            margin-top: 10px;
-        }
-        #payment-confirmation {
-            display: none;
-            margin-top: 15px;
-            padding: 10px;
-            background: #2d2d2d;
-            border-radius: 5px;
-            text-align: center;
-        }
-        #verify-payment-btn {
-            background: #4caf50;
             margin-top: 10px;
         }
     </style>
@@ -180,26 +168,20 @@
         <div id="food-list"></div>
         
         <div id="total-price">Total: ₹0</div>
-        <button id="order-btn" disabled>Proceed to Payment</button>
+        <button id="order-btn" disabled>Place Order</button>
     </div>
 
     <div class="card" id="confirmation">
-        <h3>Complete Payment</h3>
+        <h3>Order Confirmed</h3>
         
         <div class="payment-section">
             <h4>Pay with UPI</h4>
             <div class="upi-id">aadeessh005@oksbi</div>
             <p>Click below to pay with GPay</p>
             <button class="gpay-button" onclick="openGpay()">Pay with GPay</button>
-            
-            <div id="payment-confirmation">
-                <p>Payment completed? Verify to generate your order QR code</p>
-                <button id="verify-payment-btn" onclick="verifyPayment()">Verify Payment</button>
-            </div>
         </div>
         
-        <div class="qr-container" id="qr-container">
-            <h3>Order Confirmed</h3>
+        <div class="qr-container">
             <div class="qr-code" id="qr-code"></div>
             <p>Show this QR code at counter</p>
             <button class="download-btn" id="download-btn">Download QR Code</button>
@@ -208,12 +190,10 @@
 
     <script>
         const foodItems = [
-            { id: 1, name: "Tomato Rice", price: 1 },
-            { id: 2, name: "Curd Rice", price:1},
-            { id: 3, name: "Biryani", price: 1 }
+            { id: 1, name: "Tomato Rice", price: 30 },
+            { id: 2, name: "Curd Rice", price: 30 },
+            { id: 3, name: "Biryani", price: 60 }
         ];
-        
-        let currentOrderId = null;
 
         function initFoodMenu() {
             const foodList = document.getElementById('food-list');
@@ -244,7 +224,7 @@
             document.querySelectorAll('.food-item').forEach(item => {
                 total += parseInt(item.dataset.price) * parseInt(item.querySelector('.qty').textContent);
             });
-            document.getElementById('total-price').textContent = `Total: ₹${total}`;
+            document.getElementById('total-price').textContent = Total: ₹${total};
             document.getElementById('order-btn').disabled = total <= 0;
         }
 
@@ -254,35 +234,8 @@
                 alert("Please select food items to generate the payment link.");
                 return;
             }
-            const upiUrl = `upi://pay?pa=aadeessh005@oksbi&pn=Aadeesh&am=${total}&cu=INR`;
-            window.location.href = upiUrl;
-            document.getElementById('payment-confirmation').style.display = 'block';
-        }
-
-        async function verifyPayment() {
-            const verifyBtn = document.getElementById('verify-payment-btn');
-            verifyBtn.disabled = true;
-            verifyBtn.textContent = 'Verifying...';
-            
-            try {
-                const response = await fetch(`/api/orders/${currentOrderId}/verify_payment`, {
-                    method: 'POST'
-                });
-                
-                const result = await response.json();
-                if (response.ok) {
-                    document.getElementById('qr-container').style.display = 'block';
-                    document.getElementById('payment-confirmation').style.display = 'none';
-                    showQRCode(result.qr_code);
-                } else {
-                    throw new Error(result.error || 'Payment verification failed');
-                }
-            } catch (error) {
-                alert('Error: ' + error.message);
-            } finally {
-                verifyBtn.disabled = false;
-                verifyBtn.textContent = 'Verify Payment';
-            }
+            const upiUrl = upi://pay?pa=aadeessh005@oksbi&pn=Aadeesh&am=${total}&cu=INR;
+            window.location.href = upiUrl; // Works better on mobile
         }
 
         async function placeOrder() {
@@ -311,19 +264,15 @@
                 
                 const result = await response.json();
                 if (response.ok) {
-                    currentOrderId = result.order_id;
-                    document.getElementById('confirmation').style.display = 'block';
-                    document.getElementById('payment-confirmation').style.display = 'block';
-                    document.getElementById('qr-container').style.display = 'none';
-                    window.scrollTo(0, document.body.scrollHeight);
+                    showConfirmation(result.order.qr_code);
                 } else {
-                    throw new Error(result.error || 'Order failed');
+                    throw new Error(result.message || 'Order failed');
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
             } finally {
                 orderBtn.disabled = false;
-                orderBtn.textContent = 'Proceed to Payment';
+                orderBtn.textContent = 'Place Order';
             }
         }
 
@@ -342,18 +291,21 @@
             return items;
         }
 
-        function showQRCode(qrCode) {
+        function showConfirmation(qrCode) {
             document.getElementById('qr-code').innerHTML = 
-                `<img src="data:image/png;base64,${qrCode}" width="180" height="180">`;
+                <img src="data:image/png;base64,${qrCode}" width="180" height="180">;
+            document.getElementById('confirmation').style.display = 'block';
             
             document.getElementById('download-btn').onclick = function() {
                 downloadQRCode(qrCode);
             };
+            
+            window.scrollTo(0, document.body.scrollHeight);
         }
 
         function downloadQRCode(qrCode) {
             const link = document.createElement('a');
-            link.href = `data:image/png;base64,${qrCode}`;
+            link.href = data:image/png;base64,${qrCode};
             link.download = 'food_order_qr.png';
             document.body.appendChild(link);
             link.click();
