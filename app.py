@@ -9,7 +9,6 @@ import hashlib
 from datetime import datetime
 import os
 import logging
-import secrets
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -82,15 +81,6 @@ def validate_order_data(data):
             return False, "Price must be a number and quantity must be an integer"
     
     return True, ""
-
-def generate_qr_code(order_id):
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(order_id)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buffered = io.BytesIO()
-    img.save(buffered)
-    return base64.b64encode(buffered.getvalue()).decode()
 
 # Routes
 @app.route("/")
@@ -188,14 +178,17 @@ def home_page():
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
+        all_orders = bookings + orders
+        
         return render_template('home.html', 
                             username=username,
-                            orders=orders[-5:])
+                            orders=all_orders[-5:])
     except Exception as e:
         logger.error(f"Error loading home: {str(e)}")
         flash('Error loading dashboard', 'danger')
         return redirect(url_for('login'))
 
+# This is the route that will render index.html for ordering food
 @app.route("/index")
 def index():
     if not validate_session():
@@ -209,12 +202,17 @@ def order_history():
     
     try:
         username = session['username']
+        bookings_ref = db.collection('users').document(username).collection('bookings')
+        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
+        
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
         
+        all_orders = bookings + orders
+        
         return render_template('order_history.html',
                             username=username,
-                            orders=orders)
+                            orders=all_orders)
     except Exception as e:
         logger.error(f"Error fetching order history: {str(e)}")
         flash('Error fetching order history', 'danger')
@@ -238,76 +236,40 @@ def create_order():
             return jsonify({"error": validation_msg}), 400
 
         total = sum(item['price'] * item['quantity'] for item in data['food_items'])
+        
         username = session['username']
-        order_id = secrets.token_urlsafe(6)[:8]
-
+        order_ref = db.collection('orders').document()
+        booking_ref = db.collection('users').document(username).collection('bookings').document(order_ref.id)
+        
+        qr = qrcode.make(order_ref.id[:8])
+        img_io = io.BytesIO()
+        qr.save(img_io, 'PNG')
+        qr_base64 = base64.b64encode(img_io.getvalue()).decode()
+        
         order_data = {
-            "id": order_id,
+            "id": order_ref.id,
+            "booking_id": order_ref.id[:8],
             "food_items": data['food_items'],
             "phone_number": data['phone_number'],
             "roll_number": data['roll_number'],
-            "status": "pending_payment",
+            "status": "pending",
             "created_at": datetime.now(),
             "username": username,
             "amount": round(total, 2),
-            "qr_code": None
+            "qr_code": qr_base64
         }
         
-        db.collection('orders').document(order_id).set(order_data)
-        db.collection('users').document(username).collection('bookings').document(order_id).set(order_data)
+        order_ref.set(order_data)
+        booking_ref.set(order_data)
+        logger.info(f"Order created: {order_data['booking_id']}")
         
         return jsonify({
             "status": "success",
-            "order_id": order_id,
-            "total": total,
-            "upi_id": "aadeessh005@oksbi"
+            "order": order_data
         }), 201
 
     except Exception as e:
         logger.error(f"Order creation failed: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
-
-@app.route("/api/orders/<order_id>/verify_payment", methods=["POST"])
-def verify_payment(order_id):
-    if not validate_session():
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    try:
-        order_ref = db.collection('orders').document(order_id)
-        order = order_ref.get()
-        
-        if not order.exists:
-            return jsonify({"error": "Order not found"}), 404
-        
-        if order.to_dict()['username'] != session['username']:
-            return jsonify({"error": "Unauthorized"}), 403
-        
-        # In production, verify payment with UPI service here
-        # For demo, we'll just mark as paid
-        
-        qr_code = generate_qr_code(order_id)
-        
-        order_ref.update({
-            "status": "paid",
-            "paid_at": datetime.now(),
-            "qr_code": qr_code
-        })
-        
-        # Update in user's bookings collection
-        db.collection('users').document(session['username']).collection('bookings').document(order_id).update({
-            "status": "paid",
-            "paid_at": datetime.now(),
-            "qr_code": qr_code
-        })
-        
-        return jsonify({
-            "status": "success",
-            "qr_code": qr_code,
-            "order_id": order_id
-        })
-
-    except Exception as e:
-        logger.error(f"Payment verification failed: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
