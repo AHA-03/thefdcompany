@@ -9,6 +9,7 @@ import hashlib
 from datetime import datetime
 import os
 import logging
+import secrets
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -172,13 +173,8 @@ def home_page():
     
     try:
         username = session['username']
-        bookings_ref = db.collection('users').document(username).collection('bookings')
-        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
-        
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
-        
-        
         
         return render_template('home.html', 
                             username=username,
@@ -188,7 +184,6 @@ def home_page():
         flash('Error loading dashboard', 'danger')
         return redirect(url_for('login'))
 
-# This is the route that will render index.html for ordering food
 @app.route("/index")
 def index():
     if not validate_session():
@@ -202,13 +197,8 @@ def order_history():
     
     try:
         username = session['username']
-        bookings_ref = db.collection('users').document(username).collection('bookings')
-        bookings = [doc.to_dict() for doc in bookings_ref.stream()]
-        
         orders_ref = db.collection('orders').where('username', '==', username)
         orders = [doc.to_dict() for doc in orders_ref.stream()]
-        
-    
         
         return render_template('order_history.html',
                             username=username,
@@ -217,8 +207,6 @@ def order_history():
         logger.error(f"Error fetching order history: {str(e)}")
         flash('Error fetching order history', 'danger')
         return redirect(url_for('home_page'))
-
-import secrets  # For generating random IDs
 
 @app.route("/api/orders", methods=["POST"])
 def create_order():
@@ -241,10 +229,7 @@ def create_order():
         username = session['username']
 
         # Generate a random 8-character alphanumeric ID
-        order_id = secrets.token_urlsafe(6)[:8]  # e.g., "3xJ9aB2f"
-        
-        # Manually set the document ID (8 chars) instead of auto-generating
-        order_ref = db.collection('orders').document(order_id)
+        order_id = secrets.token_urlsafe(6)[:8]
         
         # Generate QR code with the 8-digit ID
         qr = qrcode.make(order_id)
@@ -253,7 +238,7 @@ def create_order():
         qr_base64 = base64.b64encode(img_io.getvalue()).decode()
         
         order_data = {
-            "id": order_id,  # Only the 8-char ID (no 20-char Firestore ID)
+            "id": order_id,
             "food_items": data['food_items'],
             "phone_number": data['phone_number'],
             "roll_number": data['roll_number'],
@@ -261,19 +246,19 @@ def create_order():
             "created_at": datetime.now(),
             "username": username,
             "amount": round(total, 2),
-            "qr_code": qr_base64  # QR contains the 8-char ID
+            "qr_code": qr_base64
         }
         
         # Save to Firestore with the custom 8-char ID
-        order_ref.set(order_data)
+        db.collection('orders').document(order_id).set(order_data)
         
         # Also save to user's bookings subcollection
-        booking_ref = db.collection('users').document(username).collection('bookings').document(order_id)
-        booking_ref.set(order_data)
+        db.collection('users').document(username).collection('bookings').document(order_id).set(order_data)
         
         return jsonify({
             "status": "success",
-            "order": order_data
+            "order_id": order_id,
+            "qr_code": qr_base64
         }), 201
 
     except Exception as e:
