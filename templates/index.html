@@ -71,8 +71,8 @@
             margin: 15px 0;
         }
         .qr-code {
-            width: 80px;
-            height: 80px;
+            width: 200px;
+            height: 200px;
             margin: 0 auto;
             padding: 5px;
             border: 1px solid #7b1fa2;
@@ -112,6 +112,8 @@
         .download-btn {
             margin-top: 15px;
             background: #4caf50;
+            width: 100%;
+            padding: 12px;
         }
         .download-btn:hover {
             background: #66bb6a;
@@ -121,12 +123,26 @@
             margin: 10px;
             color: #bb86fc;
             text-decoration: none;
+            font-weight: bold;
+        }
+        .order-id {
+            font-size: 18px;
+            margin: 10px 0;
+            color: #ffffff;
+            background: #7b1fa2;
+            padding: 8px;
+            border-radius: 5px;
+        }
+        .error-message {
+            color: #ff5252;
+            margin: 10px 0;
+            text-align: center;
         }
     </style>
 </head>
 <body>
     <div style="text-align: center;">
-        <a href="{{ url_for('home') }}" class="nav-link">Home</a>
+        <a href="{{ url_for('home_page') }}" class="nav-link">Home</a>
         <a href="{{ url_for('order_history') }}" class="nav-link">Order History</a>
         <a href="{{ url_for('logout') }}" class="nav-link">Logout</a>
     </div>
@@ -144,13 +160,15 @@
         
         <div id="total-price">Total: ₹0</div>
         <button id="order-btn" disabled>Place Order</button>
+        <div id="error-message" class="error-message"></div>
     </div>
 
     <div class="card" id="confirmation">
         <h3>Order Confirmed</h3>
+        <div class="order-id" id="order-id-display"></div>
         <div class="qr-container">
             <div class="qr-code" id="qr-code"></div>
-            <p>Show this QR code at counter</p>
+            <p>Show this QR code at the counter</p>
             <button class="download-btn" id="download-btn">Download QR Code</button>
         </div>
     </div>
@@ -182,7 +200,8 @@
             const item = btn.parentElement;
             const qty = item.querySelector('.qty');
             let newQty = parseInt(qty.textContent) + change;
-            qty.textContent = newQty < 0 ? 0 : newQty;
+            newQty = newQty < 0 ? 0 : newQty;
+            qty.textContent = newQty;
             updateTotal();
         }
 
@@ -195,12 +214,23 @@
             document.getElementById('order-btn').disabled = total <= 0;
         }
 
+        function showError(message) {
+            const errorElement = document.getElementById('error-message');
+            errorElement.textContent = message;
+            setTimeout(() => errorElement.textContent = '', 5000);
+        }
+
         async function placeOrder() {
             const roll = document.getElementById('roll_number').value;
             const phone = document.getElementById('phone_number').value;
             
-            if (!/^\d{6}$/.test(roll) || !/^\d{10}$/.test(phone)) {
-                alert('Please enter valid roll (6 digits) and phone (10 digits)');
+            if (!/^\d{6}$/.test(roll)) {
+                showError('Please enter a valid 6-digit roll number');
+                return;
+            }
+            
+            if (!/^\d{10}$/.test(phone)) {
+                showError('Please enter a valid 10-digit phone number');
                 return;
             }
 
@@ -220,13 +250,20 @@
                 });
                 
                 const result = await response.json();
-                if (response.ok) {
-                    showConfirmation(result.qr_code);
-                } else {
-                    throw new Error(result.message || 'Order failed');
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Order failed. Please try again.');
                 }
+
+                if (!result.qr_code) {
+                    throw new Error('QR code not received');
+                }
+
+                showConfirmation(result.order_id, result.qr_code);
+                
             } catch (error) {
-                alert('Error: ' + error.message);
+                showError(error.message);
+                console.error('Order error:', error);
             } finally {
                 orderBtn.disabled = false;
                 orderBtn.textContent = 'Place Order';
@@ -248,25 +285,35 @@
             return items;
         }
 
-        function showConfirmation(qrCode) {
+        function showConfirmation(orderId, qrCode) {
+            document.getElementById('order-id-display').textContent = `Order ID: ${orderId}`;
             document.getElementById('qr-code').innerHTML = 
-                `<img src="data:image/png;base64,${qrCode}" width="80" height="80">`;
+                `<img src="data:image/png;base64,${qrCode}" width="200" height="200">`;
             document.getElementById('confirmation').style.display = 'block';
             
             document.getElementById('download-btn').onclick = function() {
-                downloadQRCode(qrCode);
+                downloadQRCode(qrCode, orderId);
             };
             
+            // Scroll to confirmation and reset form
             window.scrollTo(0, document.body.scrollHeight);
+            resetOrderForm();
         }
 
-        function downloadQRCode(qrCode) {
+        function downloadQRCode(qrCode, orderId) {
             const link = document.createElement('a');
             link.href = `data:image/png;base64,${qrCode}`;
-            link.download = 'food_order_qr.png';
+            link.download = `food_order_${orderId}.png`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+
+        function resetOrderForm() {
+            document.querySelectorAll('.food-item .qty').forEach(qty => {
+                qty.textContent = '0';
+            });
+            updateTotal();
         }
 
         document.addEventListener('DOMContentLoaded', () => {
