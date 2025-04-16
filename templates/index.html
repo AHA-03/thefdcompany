@@ -138,6 +138,22 @@
             margin: 10px 0;
             text-align: center;
         }
+        #upi-payment {
+            display: none;
+            margin-top: 20px;
+        }
+        #upi-btn {
+            background: #3f51b5;
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+        }
+        #upi-btn:hover {
+            background: #5c6bc0;
+        }
+        #upi-qr {
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
@@ -171,6 +187,15 @@
             <p>Show this QR code at the counter</p>
             <button class="download-btn" id="download-btn">Download QR Code</button>
         </div>
+        
+        <!-- UPI Payment Section -->
+        <div id="upi-payment">
+            <button id="upi-btn">Pay with UPI</button>
+            <div id="upi-qr" style="display: none; text-align: center;">
+                <img src="{{ url_for('static', filename='qr.png') }}" width="200" height="200" alt="UPI QR Code">
+                <p>Scan this QR code to make payment</p>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -185,12 +210,11 @@
             foodItems.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'food-item';
-                div.innerHTML = `
-                    <span>${item.name} (₹${item.price})</span>
+                div.innerHTML = 
+                    `<span>${item.name} (₹${item.price})</span>
                     <button onclick="changeQty(this, -1)">-</button>
                     <span class="qty">0</span>
-                    <button onclick="changeQty(this, 1)">+</button>
-                `;
+                    <button onclick="changeQty(this, 1)">+</button>`;
                 div.dataset.price = item.price;
                 foodList.appendChild(div);
             });
@@ -290,6 +314,7 @@
             document.getElementById('qr-code').innerHTML = 
                 `<img src="data:image/png;base64,${qrCode}" width="200" height="200">`;
             document.getElementById('confirmation').style.display = 'block';
+            document.getElementById('upi-payment').style.display = 'block';
             
             document.getElementById('download-btn').onclick = function() {
                 downloadQRCode(qrCode, orderId);
@@ -319,6 +344,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             initFoodMenu();
             document.getElementById('order-btn').addEventListener('click', placeOrder);
+            
+            // Add UPI button click handler
+            document.getElementById('upi-btn').addEventListener('click', function() {
+                const upiQr = document.getElementById('upi-qr');
+                upiQr.style.display = upiQr.style.display === 'none' ? 'block' : 'none';
+            });
         });
     </script>
 </body>
